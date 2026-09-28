@@ -3,9 +3,8 @@ import os
 from pathlib import Path
 
 import pytest
-import tiktoken
 
-from nanobot.utils import helpers
+from nanobot.utils import helpers, token_encoding
 from nanobot.utils.helpers import (
     _write_text_atomic,
     atomic_write_lines,
@@ -107,14 +106,14 @@ def test_truncate_text_to_tokens_keeps_text_within_budget():
     assert result == text
 
 
-def test_truncate_text_to_tokens_truncates_over_budget():
-    enc = tiktoken.get_encoding("cl100k_base")
+def test_truncate_text_to_tokens_truncates_over_budget(monkeypatch, byte_encoding):
+    monkeypatch.setattr(token_encoding, "_encoding", byte_encoding)
     text = "word " * 1_000
 
     result = truncate_text_to_tokens(text, 50)
 
     assert result.endswith("\n... (truncated)")
-    assert len(enc.encode(result)) <= 50
+    assert len(byte_encoding.encode_ordinary(result)) <= 50
 
 
 def test_truncate_text_to_tokens_non_positive_budget_returns_text():
@@ -128,21 +127,22 @@ def test_truncate_text_to_tokens_non_positive_budget_returns_text():
     [
         ("🙂" * 10, 1, ""),
         ("汉" * 10, 1, ""),
-        ("a🙂" * 10, 2, "a"),
-        ("🙂" * 10, 2, "🙂"),
-        ("🙂" * 10, 7, "\n... (truncated)"),
-        ("汉" * 10, 9, "汉\n... (truncated)"),
-        ("a🙂" * 10, 8, "a\n... (truncated)"),
-        ("🙂" * 10, 8, "🙂\n... (truncated)"),
+        ("a🙂" * 10, 3, "a"),
+        ("🙂" * 10, 4, "🙂"),
+        ("🙂" * 10, 19, "\n... (truncated)"),
+        ("汉" * 10, 20, "汉\n... (truncated)"),
+        ("a🙂" * 10, 20, "a\n... (truncated)"),
+        ("🙂" * 10, 20, "🙂\n... (truncated)"),
     ],
 )
 def test_truncate_text_to_tokens_preserves_complete_unicode_characters(
-    text: str, max_tokens: int, expected: str
+    text: str, max_tokens: int, expected: str, monkeypatch, byte_encoding
 ) -> None:
+    monkeypatch.setattr(token_encoding, "_encoding", byte_encoding)
     result = truncate_text_to_tokens(text, max_tokens)
 
     assert result == expected
-    assert len(tiktoken.get_encoding("cl100k_base").encode(result)) <= max_tokens
+    assert len(byte_encoding.encode_ordinary(result)) <= max_tokens
 
 
 def test_content_with_media_breadcrumbs_preserves_valid_paths():
