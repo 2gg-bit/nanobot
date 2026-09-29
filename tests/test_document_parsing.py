@@ -385,6 +385,37 @@ class TestExtractText:
         assert "Alice" in result
         assert "Bob" in result
 
+    @pytest.mark.parametrize("empty_column", [0, 1, 2])
+    def test_extract_text_pptx_preserves_empty_table_cells(self, tmp_path: Path, empty_column):
+        from pptx import Presentation
+        from pptx.util import Inches
+
+        pptx_file = tmp_path / "sparse-table.pptx"
+        prs = Presentation()
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        table = slide.shapes.add_table(
+            3, 3, Inches(1), Inches(1), Inches(4), Inches(2)
+        ).table
+        values = ["A", "B", "C"]
+        values[empty_column] = ""
+        for column, value in enumerate(values):
+            table.cell(0, column).text = f"Header {column}"
+            table.cell(1, column).text = value
+        # The final, entirely empty row should still be omitted.
+        prs.save(pptx_file)
+        expected_row = "\t".join(values)
+
+        assert extract_text(pptx_file) == (
+            "--- Slide 1 ---\nHeader 0\tHeader 1\tHeader 2\n" + expected_row
+        )
+        source = open_document_line_source(pptx_file)
+        assert source is not None
+        searchable = [line for line in source.lines if line.searchable]
+        assert [line.text for line in searchable] == [
+            "Header 0\tHeader 1\tHeader 2", expected_row
+        ]
+        assert searchable[-1].locator == "slide=1,line=2"
+
     def test_extract_text_pptx_grouped_shapes(self, tmp_path: Path):
         """Text inside grouped shapes must be extracted recursively."""
         from pptx import Presentation
