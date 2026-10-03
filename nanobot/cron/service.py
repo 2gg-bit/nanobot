@@ -13,10 +13,10 @@ from pathlib import Path
 from types import EllipsisType
 from typing import Any, Callable, Coroutine, Literal
 
+import tzlocal
 from filelock import FileLock
 from loguru import logger
 
-from nanobot.config.timezone import detect_system_timezone
 from nanobot.cron.session_turns import is_bound_cron_job
 from nanobot.cron.types import (
     CronJob,
@@ -59,7 +59,14 @@ def _compute_next_run(schedule: CronSchedule, now_ms: int) -> int | None:
             from croniter import croniter
             # Use caller-provided reference time for deterministic scheduling
             base_time = now_ms / 1000
-            tz = ZoneInfo(schedule.tz or detect_system_timezone())
+            if schedule.tz:
+                tz = ZoneInfo(schedule.tz)
+            else:
+                try:
+                    tz = tzlocal.get_localzone()
+                except Exception:
+                    # Preserve local-offset scheduling if zone rules cannot be read.
+                    tz = datetime.now().astimezone().tzinfo
             base_dt = datetime.fromtimestamp(base_time, tz=tz)
             cron = croniter(schedule.expr, base_dt)
             next_dt = cron.get_next(datetime)
